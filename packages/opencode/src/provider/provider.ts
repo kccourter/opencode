@@ -7,6 +7,7 @@ import { mapValues, mergeDeep, omit, pickBy, sortBy } from "remeda"
 import { NoSuchModelError, type Provider as SDK } from "ai"
 import { Npm } from "@opencode-ai/core/npm"
 import { Hash } from "@opencode-ai/core/util/hash"
+import { AwsProxy } from "@opencode-ai/core/util/aws-proxy"
 import { Plugin } from "../plugin"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
@@ -354,7 +355,11 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       // Bearer token takes precedence over credential chain (profiles, access keys, IAM roles, web identity tokens)
       if (!awsBearerToken && !configApiKey) {
         // Build credential provider options (only pass profile if specified)
-        const credentialProviderOptions = profile ? { profile } : {}
+        const requestHandler = AwsProxy.buildAwsProxyRequestHandler()
+        const credentialProviderOptions = {
+          ...(profile ? { profile } : {}),
+          ...(requestHandler ? { clientConfig: { requestHandler } } : {}),
+        }
 
         providerOptions.credentialProvider = fromNodeProviderChain(credentialProviderOptions)
       }

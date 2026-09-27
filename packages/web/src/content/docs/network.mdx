@@ -9,7 +9,8 @@ OpenCode supports standard proxy environment variables and custom certificates f
 
 ## Proxy
 
-OpenCode respects standard proxy environment variables.
+OpenCode respects standard proxy environment variables, including credential
+lookups for the Amazon Bedrock provider (SSO/STS/instance-role calls).
 
 ```bash
 # HTTPS proxy (recommended)
