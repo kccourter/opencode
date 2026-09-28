@@ -11,6 +11,11 @@ The release manifest distinguishes the archive SHA-256 checksum from the OCI
 image-index descriptor digest and reports both required platform descriptors:
 `linux/amd64` and `linux/arm64`.
 
+The release command disables Buildx provenance attestations so the OCI image
+index contains exactly those two platform image manifests. This preserves the
+portable artifact contract rather than requiring downstream consumers to
+interpret build-attestation descriptors.
+
 ## Changed Files
 
 - `packages/opencode/script/air-gapped-oci.ts`

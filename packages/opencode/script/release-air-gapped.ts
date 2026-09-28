@@ -24,7 +24,7 @@ const manifest = archive + ".manifest.json"
 await $`mkdir -p ${artifactDir}`
 await $`rm -f ${temporary}`
 await $`OPENCODE_VERSION=${Script.version} OPENCODE_CHANNEL=${Script.channel} bun ./script/build.ts`
-await $`docker buildx build --platform linux/amd64,linux/arm64 -t opencode:${Script.version} --output type=oci,dest=${temporary} .`
+await $`docker buildx build --platform linux/amd64,linux/arm64 --provenance=false -t opencode:${Script.version} --output type=oci,dest=${temporary} .`
 
 const release = await releaseManifest(temporary, path.basename(archive))
 await Bun.write(temporary + ".sha256", `${release.archive.sha256}  ${path.basename(archive)}\n`)
