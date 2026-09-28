@@ -1794,6 +1794,7 @@ const layer = Layer.effect(
           model.api.npm === "@ai-sdk/amazon-bedrock/mantle" &&
           options["credentialProvider"] === undefined &&
           options["apiKey"] === undefined &&
+          !process.env.AWS_ACCESS_KEY_ID &&
           process.env.AWS_BEARER_TOKEN_BEDROCK === undefined
         ) {
           const { fromNodeProviderChain } = await import("@aws-sdk/credential-providers")
