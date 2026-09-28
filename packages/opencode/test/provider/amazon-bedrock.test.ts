@@ -145,6 +145,38 @@ it.instance(
 )
 
 it.instance(
+  "Custom Bedrock Mantle: preserves the configured OpenAI endpoint",
+  () =>
+    Effect.gen(function* () {
+      yield* set("AWS_PROFILE", "env-profile")
+      const provider = yield* Provider.Service
+      const model = yield* provider.getModel(
+        ProviderV2.ID.make("custom-mantle"),
+        ModelV2.ID.make("openai.gpt-5.4"),
+      )
+      const language = yield* provider.getLanguage(model)
+      const config = language as unknown as {
+        config: { url: (input: { path: string; modelId: string }) => string }
+      }
+      expect(config.config.url({ path: "/chat/completions", modelId: "openai.gpt-5.4" })).toBe(
+        "https://example.com/openai/v1/chat/completions",
+      )
+    }),
+  {
+    config: {
+      provider: {
+        "custom-mantle": {
+          npm: "@ai-sdk/amazon-bedrock/mantle",
+          api: "https://example.com/openai/v1",
+          options: { profile: "config-profile", region: "us-gov-west-1" },
+          models: { "openai.gpt-5.4": { name: "Custom Mantle GPT" } },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
   "Bedrock Mantle: GPT OSS safeguard uses Chat Completions and Mantle base path",
   () =>
     Effect.gen(function* () {

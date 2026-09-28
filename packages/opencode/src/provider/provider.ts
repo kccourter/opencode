@@ -1790,6 +1790,21 @@ const layer = Layer.effect(
             ...model.headers,
           }
 
+        if (
+          model.api.npm === "@ai-sdk/amazon-bedrock/mantle" &&
+          options["credentialProvider"] === undefined &&
+          options["apiKey"] === undefined &&
+          process.env.AWS_BEARER_TOKEN_BEDROCK === undefined
+        ) {
+          const { fromNodeProviderChain } = await import("@aws-sdk/credential-providers")
+          const profile = typeof options["profile"] === "string" ? options["profile"] : envs.AWS_PROFILE
+          const requestHandler = AwsProxy.buildAwsProxyRequestHandler()
+          options["credentialProvider"] = fromNodeProviderChain({
+            ...(profile ? { profile } : {}),
+            ...(requestHandler ? { clientConfig: { requestHandler } } : {}),
+          })
+        }
+
         const key = Hash.fast(
           JSON.stringify({
             providerID: model.providerID,
