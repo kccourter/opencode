@@ -8,7 +8,7 @@ provider now honors `HTTP_PROXY`/`HTTPS_PROXY`, which it did not upstream.
 The target environment is a network-isolated dev container whose only egress
 is a Squid proxy, running the official-style single-binary `opencode`
 container image. That environment currently builds its toolbox image by
-pulling the *stock* upstream binary directly from
+pulling the _stock_ upstream binary directly from
 `ghcr.io/anomalyco/opencode` (pinned by digest) and extracting it. This
 document is the step-by-step for replacing that with a binary built from this
 fork instead.
@@ -32,7 +32,7 @@ surfaced at runtime by `packages/core/src/installation/version.ts`), not read
 from `package.json`. Setting the env vars below at build time is sufficient —
 no code changes are needed to control it.
 
-## Step 1 — Build the patched binary
+## Step 1 — Build the release artifact
 
 Run this on any machine with network access (it does not need to be part of
 the isolated enclave, and does not need to be Linux — Bun cross-compiles):
@@ -40,17 +40,23 @@ the isolated enclave, and does not need to be Linux — Bun cross-compiles):
 ```bash
 git checkout bedrock-proxy-fix
 bun install
-OPENCODE_VERSION=2.0.15-cam.1 OPENCODE_CHANNEL=cam ./packages/opencode/script/build.ts
+OPENCODE_VERSION=2.0.15-cam.1 OPENCODE_CHANNEL=cam \
+  OPENCODE_ARTIFACT_DIR=/tmp/opencode \
+  bun run --cwd packages/opencode build:air-gapped
 ```
 
-Do **not** pass `--single` — that only builds a binary for the host's own
-platform/arch, which is not what the target container needs. Omitting it
-builds all supported target platforms into `packages/opencode/dist/`. Only
-two are needed, matching exactly what the target environment's toolbox
-`Dockerfile` already extracts from the upstream image today:
+The command builds every OpenCode target, packages the two Linux musl binaries
+needed by the target toolbox, and writes three transfer artifacts outside the
+source tree:
 
-- `dist/opencode-linux-x64-baseline-musl/bin/opencode` (amd64)
-- `dist/opencode-linux-arm64-musl/bin/opencode` (arm64)
+- `/tmp/opencode/opencode-2.0.15-cam.1.oci.tar`;
+- `/tmp/opencode/opencode-2.0.15-cam.1.oci.tar.sha256`; and
+- `/tmp/opencode/opencode-2.0.15-cam.1.oci.tar.manifest.json`.
+
+The release manifest records the archive checksum, the OCI image-index
+descriptor digest, and the `linux/amd64` and `linux/arm64` manifest digests.
+`x86_64` and `amd64` are names for the same platform. The archive is always
+multi-platform even when a pilot validates only AMD64 runtime behavior.
 
 ## Step 2 — Package into a container image
 
@@ -90,18 +96,10 @@ Record the resulting image digest (from the `--push` output, or
 `docker inspect --format='{{index .RepoDigests 0}}' <image>`) — the toolbox
 Dockerfile pins by digest, not tag.
 
-For a file-based handoff instead of a direct registry push, produce an OCI
-archive and checksum outside either source tree. This is the artifact to move
-through the approved transfer mechanism:
-
-```bash
-mkdir -p /tmp/opencode
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t opencode:2.0.15-cam.1 \
-  --output type=oci,dest=/tmp/opencode/opencode-2.0.15-cam.1.oci.tar .
-sha256sum /tmp/opencode/opencode-2.0.15-cam.1.oci.tar \
-  > /tmp/opencode/opencode-2.0.15-cam.1.oci.tar.sha256
-```
+For a file-based handoff, use the three artifacts from Step 1. Do not recreate
+the archive with an ad hoc `docker buildx` command: the release command
+validates its OCI layout and records the image-index and platform descriptors
+needed by the receiving workspace.
 
 ## Step 3 — Repoint the OPA toolbox Dockerfile
 

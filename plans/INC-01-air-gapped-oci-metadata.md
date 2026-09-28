@@ -1,6 +1,6 @@
 # INC-01 Air-Gapped OCI Build Metadata
 
-**Status:** Proposed
+**Status:** Complete 2026-09-28
 
 ## Objective
 
