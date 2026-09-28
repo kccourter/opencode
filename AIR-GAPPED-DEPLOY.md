@@ -16,11 +16,11 @@ fork instead.
 ## Versioning convention for this fork
 
 - **Fork token**: `cam`
-- **Build-time version**: `<upstream-base-version>+cam.<n>`, e.g. `2.0.15+cam.1`.
+- **Fork version**: `<upstream-base-version>-cam.<n>`, e.g. `2.0.15-cam.1`.
   Bump `<n>` for every rebuild against the same upstream base; bump the base
   version when rebasing onto a newer upstream release.
 - **Channel**: `cam`
-- **Git tags**: `cam-v<version>`, e.g. `cam-v2.0.15+cam.1` — a distinct
+- **Git tags**: `cam-v<version>`, e.g. `cam-v2.0.15-cam.1` — a distinct
   namespace from upstream's bare `v*` tags (mirrors the existing
   `github-v*`/`vscode-v*` precedent already used in this repo).
 - Never publish under the name `opencode-ai` if this is ever pushed to an
@@ -40,7 +40,7 @@ the isolated enclave, and does not need to be Linux — Bun cross-compiles):
 ```bash
 git checkout bedrock-proxy-fix
 bun install
-OPENCODE_VERSION=2.0.15+cam.1 OPENCODE_CHANNEL=cam ./packages/opencode/script/build.ts
+OPENCODE_VERSION=2.0.15-cam.1 OPENCODE_CHANNEL=cam ./packages/opencode/script/build.ts
 ```
 
 Do **not** pass `--single` — that only builds a binary for the host's own
@@ -74,13 +74,15 @@ RUN opencode --version
 ENTRYPOINT ["opencode"]
 ```
 
-Build multi-arch and push to an internal registry (run from the fork
-checkout, so `dist/` from Step 1 is present in the build context):
+Build multi-arch and push to an internal registry from `packages/opencode`.
+The Dockerfile copies `dist/` relative to its build context; using the
+repository root would both point at the wrong directory and apply the root
+`.dockerignore`, which excludes `dist/`:
 
 ```bash
+cd packages/opencode
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -f packages/opencode/Dockerfile \
-  -t <your-internal-registry>/opencode:2.0.15+cam.1 \
+  -t <your-internal-registry>/opencode:2.0.15-cam.1 \
   --push .
 ```
 
@@ -88,10 +90,41 @@ Record the resulting image digest (from the `--push` output, or
 `docker inspect --format='{{index .RepoDigests 0}}' <image>`) — the toolbox
 Dockerfile pins by digest, not tag.
 
-## Step 3 — Repoint the toolbox Dockerfile
+For a file-based handoff instead of a direct registry push, produce an OCI
+archive and checksum outside either source tree. This is the artifact to move
+through the approved transfer mechanism:
 
-In the target environment's toolbox `Dockerfile`, swap the two pinned
-upstream image references:
+```bash
+mkdir -p /tmp/opencode
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t opencode:2.0.15-cam.1 \
+  --output type=oci,dest=/tmp/opencode/opencode-2.0.15-cam.1.oci.tar .
+sha256sum /tmp/opencode/opencode-2.0.15-cam.1.oci.tar \
+  > /tmp/opencode/opencode-2.0.15-cam.1.oci.tar.sha256
+```
+
+## Step 3 — Repoint the OPA toolbox Dockerfile
+
+The current integration worktree is the sibling
+`../opa-workspace-opencode-firewall`, not the base `../opa-workspace` tree.
+Its `containers/dev/Dockerfile` consumes a registry image by digest; do not
+copy the image tarball into the OPA source tree or Docker build context.
+
+The person performing the OPA integration should manually move
+`/tmp/opencode/opencode-2.0.15-cam.1.oci.tar` and its `.sha256` sidecar
+through the approved air-gap mechanism, verify the checksum, load or publish
+it to the internal registry, and record the resulting multi-architecture
+registry digest. This manual boundary keeps the fork build separate from the
+OPA worktree's existing uncommitted changes.
+
+In `../opa-workspace-opencode-firewall`, update these OPA-owned files:
+
+- `containers/dev/Dockerfile`: the two source-image `FROM` lines, the
+  `OPENCODE_VERSION` argument, the version self-check, and the OpenCode label.
+- `tests/test_dev_container.py`: assertions for those Dockerfile values.
+
+Swap the two pinned upstream image references in
+`containers/dev/Dockerfile`:
 
 ```dockerfile
 # before
@@ -104,11 +137,17 @@ FROM <your-internal-registry>/opencode@sha256:<new-digest> AS opencode-arm64
 ```
 
 Also bump the `OPENCODE_VERSION=2.0.15` build `ARG` near the top of that file
-to `2.0.15+cam.1`, so the file's own sanity check
-(`test "$(opencode --version)" = "opencode v${OPENCODE_VERSION}"`) still
-passes. No other changes are needed — the rest of that Dockerfile (apt
-packages, mise, uv, the self-check script) keeps extracting from the
+to `2.0.15-cam.1`, so the file's own sanity check
+(`test "$(opencode --version)" = "${OPENCODE_VERSION}"`) still passes.
+`opencode --version` prints the version directly; it does not include an
+`opencode v` prefix. No other changes are needed — the rest of that Dockerfile
+(apt packages, mise, uv, the self-check script) keeps extracting from the
 `opencode-${TARGETARCH}` stage exactly as before.
+
+Set the matching `opa.dev.opencode.version` label to `2.0.15-cam.1`, then
+update the matching test assertions. The version is compiled into the fork
+binary, so changing this value requires a rebuild; do not relabel a binary
+built with a different `OPENCODE_VERSION`.
 
 ## Step 4 — Widen the Squid ACL for SSO/STS (required companion change)
 
@@ -146,8 +185,8 @@ confirmed.
 
 ## Verification checklist
 
-- [ ] `opencode --version` on the built image prints the fork's version
-      string (`2.0.15+cam.1`, not an upstream-looking one).
+- [ ] `opencode --version` on the built image prints exactly the fork's
+      version string (`2.0.15-cam.1`, not an upstream-looking one).
 - [ ] SSO/STS traffic is observed flowing through `opencode-provider-proxy`
       (not bypassing it) once the ACL from Step 4 is in place.
 - [ ] A full credential refresh (`~/.aws/sso/cache/*` cleared) succeeds
