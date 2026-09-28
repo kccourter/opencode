@@ -1,6 +1,6 @@
 # INC-02 Build Fork OCI Archive
 
-**Status:** Proposed
+**Status:** Complete 2026-09-28
 
 ## Objective
 

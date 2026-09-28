@@ -181,6 +181,14 @@ swapping the source registry reference in Step 3 does not change how the
 crossing itself works. Fill this section in once that mechanism is
 confirmed.
 
+After transfer, verify the sidecar from the directory containing the archive;
+the sidecar intentionally records the archive basename so it remains portable:
+
+```bash
+cd <artifact-directory>
+sha256sum --check opencode-2.0.15-cam.1.oci.tar.sha256
+```
+
 ## Verification checklist
 
 - [ ] `opencode --version` on the built image prints exactly the fork's
