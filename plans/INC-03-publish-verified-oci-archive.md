@@ -1,6 +1,6 @@
 # INC-03 Publish Verified OCI Archive
 
-**Status:** Approved 2026-09-28 — awaits registry destination
+**Status:** Deferred 2026-09-28 — awaiting Artifactory registry provisioning
 
 ## Objective
 

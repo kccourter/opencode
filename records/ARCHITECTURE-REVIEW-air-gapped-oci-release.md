@@ -105,3 +105,39 @@ Dockerfile until the approved transfer mechanism supplies the internal registry
 repository and its preserved image-index digest. Replan the registry-handoff
 documentation as a distinct increment; do not substitute a local AMD64 digest,
 archive checksum, tag, or independent rebuild digest.
+
+## Addendum: Direct OCI Layout Consumption
+
+The registry is not yet provisioned, so the approved interim is for the OPA
+workspace to consume the verified artifact directly from `/tmp/opencode` as a
+Buildx named OCI layout context. This keeps the OPA workspace independent of
+the fork source checkout and preserves the multi-platform index without a
+registry.
+
+The OCI archive itself must first be unpacked to an OCI layout directory under
+`/tmp/opencode`. Buildx then receives the layout explicitly:
+
+```text
+--build-context opencode-artifact=oci-layout:///tmp/opencode/<verified-layout>
+```
+
+and the OPA Dockerfile references `opencode-artifact` as its source stage. The
+named context resolves the matching platform from the multi-platform index for
+each image target. The standard Docker build context remains source-only; the
+archive and unpacked layout remain outside it.
+
+An isolated Buildx proof consumed the current verified layout on AMD64/x86_64,
+ran `opencode --version` inside the resulting source stage, and returned
+`2.0.15-cam.1`. The proof used no registry, no fork source import, and no
+networked runtime container.
+
+The OPA integration must add a preflight that verifies the archive checksum and
+release manifest before unpacking into a session-owned `/tmp/opencode` layout,
+then passes that exact directory through Compose/Buildx `additional_contexts`.
+It must reject a missing, unchecked, or wrong-version artifact. The normal OPA
+build and startup path remains unaware of how OpenCode was built; it receives
+only the prepared portable artifact path and metadata.
+
+Registry publication remains the later preferred distribution mode. Until an
+internal Artifactory repository is provisioned, the archive-to-registry plan is
+deferred rather than simulated with `docker load` or a separate rebuild.
