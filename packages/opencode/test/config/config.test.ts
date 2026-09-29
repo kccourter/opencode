@@ -98,12 +98,13 @@ const configLayer = (
     auth?: Layer.Layer<Auth.Service>
     account?: Layer.Layer<Account.Service>
     client?: HttpClient.HttpClient
+    npm?: Layer.Layer<Npm.Service>
   } = {},
 ) =>
   LayerNode.compile(LayerNode.group([Config.node, FSUtil.node, Env.node, CrossSpawnSpawner.node]), [
     [Auth.node, options.auth ?? AuthTest.empty],
     [Account.node, options.account ?? AccountTest.empty],
-    [Npm.node, NpmTest.noop],
+    [Npm.node, options.npm ?? NpmTest.noop],
     [httpClient, Layer.succeed(HttpClient.HttpClient, options.client ?? unexpectedHttp)],
   ])
 
@@ -111,6 +112,12 @@ const layer = configLayer()
 
 const it = testEffect(layer)
 const configIt = (options?: Parameters<typeof configLayer>[0]) => testEffect(configLayer(options))
+const dependencyInstalls: string[] = []
+const dependencyIt = configIt({
+  npm: Layer.mock(Npm.Service, {
+    install: (directory) => Effect.sync(() => dependencyInstalls.push(directory)),
+  }),
+})
 
 const schemaConfig = (config: object) => ({ $schema: "https://opencode.ai/config.json", ...config })
 
@@ -1135,8 +1142,9 @@ it.effect("creates a missing OPENCODE_CONFIG_DIR", () =>
   }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
 )
 
-it.effect("installs dependencies in writable OPENCODE_CONFIG_DIR", () =>
+dependencyIt.effect("does not install dependencies in a config directory without plugins", () =>
   Effect.gen(function* () {
+    dependencyInstalls.length = 0
     const dir = yield* tmpdirScoped()
     const configDir = path.join(dir, "configdir")
     yield* FSUtil.use.ensureDir(configDir)
@@ -1149,7 +1157,30 @@ it.effect("installs dependencies in writable OPENCODE_CONFIG_DIR", () =>
       ),
     )
 
-    expect(yield* FSUtil.use.readFileString(path.join(configDir, ".gitignore"))).toContain("package-lock.json")
+    expect(dependencyInstalls).not.toContain(configDir)
+  }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
+)
+
+dependencyIt.effect("installs dependencies for a local config plugin", () =>
+  Effect.gen(function* () {
+    dependencyInstalls.length = 0
+    const dir = yield* tmpdirScoped()
+    const configDir = path.join(dir, "configdir")
+    yield* FSUtil.use.writeWithDirs(path.join(configDir, "plugin.ts"), "export {}\n")
+    yield* FSUtil.use.writeWithDirs(
+      path.join(configDir, "opencode.json"),
+      JSON.stringify({ plugin: ["./plugin.ts"] }),
+    )
+
+    yield* withProcessEnv(
+      "OPENCODE_CONFIG_DIR",
+      configDir,
+      Config.Service.use((svc) => svc.get().pipe(Effect.andThen(svc.waitForDependencies()))).pipe(
+        provideInstanceEffect(dir),
+      ),
+    )
+
+    expect(dependencyInstalls).toContain(configDir)
   }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
 )
 

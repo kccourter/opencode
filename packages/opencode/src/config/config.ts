@@ -449,6 +449,19 @@ const layer = Layer.effect(
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
+          result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
+          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
+          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
+          // Auto-discovered plugins under `.opencode/plugin(s)` are already local files, so ConfigPlugin.load
+          // returns normalized Specs and we only need to attach origin metadata here.
+          const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
+          yield* mergePluginOrigins(dir, list)
+
+          const localPlugin = result.plugin_origins?.some(
+            (plugin) => plugin.scope === "local" && (plugin.source === dir || path.dirname(plugin.source) === dir),
+          )
+          if (!localPlugin) continue
+
           const dep = yield* npmSvc
             .install(dir, {
               add: [
@@ -469,14 +482,6 @@ const layer = Layer.effect(
               Effect.forkDetach,
             )
           deps.push(dep)
-
-          result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
-          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
-          // Auto-discovered plugins under `.opencode/plugin(s)` are already local files, so ConfigPlugin.load
-          // returns normalized Specs and we only need to attach origin metadata here.
-          const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
-          yield* mergePluginOrigins(dir, list)
         }
 
         if (process.env.OPENCODE_CONFIG_CONTENT) {
